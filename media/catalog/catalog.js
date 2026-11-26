@@ -31,7 +31,7 @@
   '.tahc #tc-p summary::after{content:"";width:7px;height:7px;border:solid currentColor;border-width:0 1px 1px 0;transform:rotate(45deg);flex:none}' +
   '.tahc #tc-p[open] summary::after{transform:rotate(225deg)}' +
   '.tahc .tc-partner-options{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:4;max-height:264px;overflow-y:auto;padding:4px 12px;border:1px solid var(--c-line,#dcdcd2);border-radius:var(--r);background:var(--c-card,#fff)}' +
-  '.tahc .tc-partner-options .tc-mark{min-height:44px}' +
+  '.tahc .tc-partner-options .tc-mark{min-height:44px}.tahc .tc-partner-options .tc-mark.is-empty{opacity:.5}' +
   '.tahc .tc-reset{min-height:48px;padding:0 16px;border-radius:calc(var(--r) - 4px);border:1px solid var(--c-line,#dcdcd2);background:transparent;color:inherit;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap}' +
   '.tahc .tc-reset:hover{border-color:var(--c-acc,#3c6b2a)}' +
   '.tahc .tc-chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:thin}' +
@@ -244,6 +244,7 @@
     var id = makerId(p);
     if (id && !catalogMakers.has(id)) catalogMakers.set(id, nm(p.brand));
   });
+  var makerOrder = new Map(Array.from(catalogMakers.keys()).map(function (id, i) { return [id, i]; }));
   var quantity = function (n, one, few, many) {
     var t = n % 10, h = n % 100;
     return n + ' ' + (t === 1 && h !== 11 ? one : t >= 2 && t <= 4 && (h < 12 || h > 14) ? few : many);
@@ -257,7 +258,7 @@
       '<div><span class="tc-partner-label" id="tc-p-label">Производитель</span><details id="tc-p">' +
         '<summary aria-labelledby="tc-p-label tc-p-value"><span id="tc-p-value">Все производители</span></summary>' +
         '<div class="tc-partner-options" role="group" aria-labelledby="tc-p-label">' +
-        Array.from(catalogMakers).map(function (p) { return '<label class="tc-mark"><input type="checkbox" value="' + esc(p[0]) + '"><span>' + esc(p[1]) + '</span></label>'; }).join('') +
+        Array.from(catalogMakers).map(function (p) { return '<label class="tc-mark"><input type="checkbox" value="' + esc(p[0]) + '"><span>' + esc(p[1]) + '</span><small></small></label>'; }).join('') +
         '</div></details></div>' +
       '<button class="tc-reset" type="button">Сбросить</button>' +
     '</div>' +
@@ -514,6 +515,19 @@
     var activePartner = singlePartner();
     $('#tc-p-value').textContent = activePartner ? catalogMakers.get(activePartner) : state.partners.length ? 'Выбрано: ' + state.partners.length : 'Все производители';
     partnerFilter.querySelectorAll('input').forEach(function (input) { input.checked = state.partners.indexOf(input.value) >= 0; });
+    // Сколько товаров у каждого производителя в открытом разделе. Те, у кого здесь товаров нет,
+    // бледнее и уходят вниз списка (переставляем, только пока список закрыт, чтобы ничего не прыгало под пальцем)
+    var options = partnerFilter.querySelector('.tc-partner-options'), withItems = [], empty = [];
+    options.querySelectorAll('label').forEach(function (label) {
+      var input = label.querySelector('input'), n = within(searched, deepest(), [input.value]).length;
+      label.querySelector('small').textContent = n;
+      label.classList.toggle('is-empty', !n && !input.checked);
+      (n || input.checked ? withItems : empty).push(label);
+    });
+    if (!partnerFilter.open) {
+      var order = function (a, b) { return makerOrder.get(a.querySelector('input').value) - makerOrder.get(b.querySelector('input').value); };
+      withItems.sort(order).concat(empty.sort(order)).forEach(function (label) { options.appendChild(label); });
+    }
     root.querySelectorAll('.tc-pcard').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-partner') === activePartner ? 'true' : 'false'); });
     var nIn = function (id) { return within(available, id).length; };
     root.querySelectorAll('[data-top], [data-type]').forEach(function (b) {
@@ -536,6 +550,16 @@
     // «По виду» — быстрый вход с верхнего уровня; внутри направления хватает строк разделов
     $('.tc-types').hidden = !!state.top || !$('.tc-types [data-type]:not([hidden])');
     renderMakers(searched);
+    // На телефоне ряды кнопок прокручиваются вбок: выбранная кнопка должна быть видна
+    [subBox, leafBox, makers.querySelector('.tc-mlist')].forEach(revealPressed);
+  };
+
+  var revealPressed = function (box) {
+    if (!box || box.hidden || box.scrollWidth <= box.clientWidth) return;
+    var on = box.querySelector('[aria-pressed="true"]');
+    if (!on) return;
+    var left = on.offsetLeft - box.offsetLeft, right = left + on.offsetWidth;
+    if (left < box.scrollLeft || right > box.scrollLeft + box.clientWidth) box.scrollLeft = Math.max(0, left - 16);
   };
 
   // Переключатели производителей внутри выбранного раздела.
